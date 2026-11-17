@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PKBM Sunan Gunung Jati - Sistem Ujian Daring Cloud</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Mammoth.js untuk pembacaan file Word (.docx) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="h-full flex flex-col justify-between text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- CUSTOM CONFIRMATION MODAL -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all scale-95 opacity-0 duration-200" id="confirm-modal-content">
+            <div class="flex items-center gap-3 mb-4">
+                <div id="confirm-icon-wrap" class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+                    <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h3 id="confirm-title" class="text-lg font-bold text-slate-900">Konfirmasi Tindakan</h3>
+                    <p id="confirm-desc" class="text-sm text-slate-500">Apakah Anda yakin ingin melanjutkan proses ini?</p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button id="confirm-cancel-btn" onclick="closeConfirmModal(false)" class="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition">Batal</button>
+                <button id="confirm-ok-btn" onclick="closeConfirmModal(true)" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition">Ya, Lanjutkan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOP HEADER NAVBAR -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="navigateTo('landing')">
+                <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-bold shadow-md shadow-emerald-600/30">
+                    <i data-lucide="graduation-cap" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">PKBM Sunan Gunung Jati</h1>
+                    <p class="text-xs text-slate-500 font-medium">Sistem Ujian Daring (CBT) Cloud Real-Time</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="openTeacherPortal()" class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">
+                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                    <span>Panel Guru</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN APP CONTAINER -->
+    <main id="app-root" class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <!-- Dynamic views rendered via JavaScript -->
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-white border-t border-slate-200 py-4 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <p>&copy; 2026 <strong>PKBM Sunan Gunung Jati</strong>. Seluruh data tersimpan aman di Cloud Server.</p>
+            <p id="cloud-sync-indicator" class="flex items-center gap-1.5 text-slate-400 font-medium">
+                <i data-lucide="cloud-off" class="w-3.5 h-3.5"></i> Menghubungkan ke Cloud Server...
+            </p>
+        </div>
+    </footer>
+
+    <!-- APPLICATION LOGIC & FIREBASE CLOUD SYNC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =========================================================================
+        // 1. CONFIGURATION & STATE INITIALIZATION
+        // =========================================================================
+        const TEACHER_PIN = '1234';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(__firebase_config);
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let isCloudReady = false;
+
+        // Default seed data if database is empty
+        const defaultData = {
+            rooms: [
+                {
+                    id: 'room-1',
+                    code: 'PAKETC-BIND',
+                    paket: 'Paket C (Setara SMA)',
+                    subject: 'Bahasa Indonesia',
+                    duration: 45,
+                    status: 'OPEN',
+                    showScore: true,
+                    createdAt: '2026-11-17',
+                    questions: [
+                        {
+                            id: 'q-101',
+                            type: 'PG',
+                            text: 'Pendidikan kesetaraan di PKBM Sunan Gunung Jati memberikan kesempatan belajar tanpa batas usia. Ide pokok paragraf tersebut adalah...',
+                            options: { A: 'Batasan usia belajar', B: 'Kesempatan belajar melalui pendidikan kesetaraan', C: 'Lokasi PKBM', D: 'Warga putus sekolah' },
+                            answer: 'B',
+                            weight: 20
+                        },
+                        {
+                            id: 'q-102',
+                            type: 'PG',
+                            text: 'Penulisan kata baku yang tepat sesuai KBBI adalah...',
+                            options: { A: 'Aktifitas & Ijazah', B: 'Aktivitas & Ijasah', C: 'Aktivitas & Ijazah', D: 'Aktipitas & Ijazah' },
+                            answer: 'C',
+                            weight: 20
+                        },
+                        {
+                            id: 'q-103',
+                            type: 'ESSAY',
+                            text: 'Jelaskan mengapa program pendidikan kesetaraan sangat penting bagi masyarakat!',
+                            options: {},
+                            answer: '',
+                            weight: 60
+                        }
+                    ]
+                },
+                {
+                    id: 'room-2',
+                    code: 'PAKETB-MTK',
+                    paket: 'Paket B (Setara SMP)',
+                    subject: 'Matematika Dasar',
+                    duration: 60,
+                    status: 'OPEN',
+                    showScore: true,
+                    createdAt: '2026-11-17',
+                    questions: [
+                        {
+                            id: 'q-201',
+                            type: 'PG',
+                            text: 'Hasil dari -18 + 32 - (-10) adalah...',
+                            options: { A: '6', B: '24', C: '-24', D: '40' },
+                            answer: 'B',
+                            weight: 50
+                        },
+                        {
+                            id: 'q-202',
+                            type: 'PG',
+                            text: 'Jika 4x - 5 = 19, maka nilai x adalah...',
+                            options: { A: '4', B: '5', C: '6', D: '7' },
+                            answer: 'C',
+                            weight: 50
+                        }
+                    ]
+                }
+            ],
+            submissions: []
+        };
+
+        let appState = {
+            rooms: [],
+            submissions: []
+        };
+
+        let session = {
+            view: 'landing', // landing | teacher-login | teacher-dashboard | student-exam | student-result
+            teacherTab: 'rooms', // rooms | live | results
+            selectedRoomId: 'room-1',
+            isTeacherAuth: false,
+            activeSubmissionId: null,
+            activeQuestionIdx: 0,
+            examTimerInterval: null,
+            essayDebounceTimer: null
+        };
+
+        // Firestore paths using strict required structure
+        function getRoomsCol() {
+            return collection(db, 'artifacts', appId, 'public', 'data', 'cbt_rooms');
+        }
+        function getRoomDoc(roomId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'cbt_rooms', roomId);
+        }
+        function getSubmissionsCol() {
+            return collection(db, 'artifacts', appId, 'public', 'data', 'cbt_submissions');
+        }
+        function getSubmissionDoc(subId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'cbt_submissions', subId);
+        }
+
+        async function saveRoomToCloud(room) {
+            if (!currentUser) return;
+            try {
+                await setDoc(getRoomDoc(room.id), room);
+            } catch (err) {
+                console.error('Gagal menyimpan ruangan:', err);
+                showToast('Gagal menyinkronkan ruangan ke cloud.', 'error');
+            }
+        }
+
+        async function deleteRoomFromCloud(roomId) {
+            if (!currentUser) return;
+            try {
+                await deleteDoc(getRoomDoc(roomId));
+            } catch (err) {
+                console.error('Gagal menghapus ruangan:', err);
+            }
+        }
+
+        async function saveSubmissionToCloud(submission) {
+            if (!currentUser) return;
+            try {
+                await setDoc(getSubmissionDoc(submission.id), submission);
+            } catch (err) {
+                console.error('Gagal menyimpan progres siswa:', err);
+            }
+        }
+
+        // Initialize Firebase Authentication & Real-Time Listeners
+        async function initCloudSync() {
+            const indicator = document.getElementById('cloud-sync-indicator');
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                currentUser = auth.currentUser;
+                if (!currentUser) return;
+
+                // Seed default data if rooms collection is empty
+                const initialSnap = await getDocs(getRoomsCol());
+                if (initialSnap.empty) {
+                    for (const r of defaultData.rooms) {
+                        await setDoc(getRoomDoc(r.id), r);
+                    }
+                }
+
+                // Real-time listener for Rooms
+                onSnapshot(getRoomsCol(), (snapshot) => {
+                    const rooms = [];
+                    snapshot.forEach(docSnap => rooms.push(docSnap.data()));
+                    rooms.sort((a, b) => (a.id > b.id ? 1 : -1));
+                    appState.rooms = rooms;
+                    isCloudReady = true;
+
+                    if (indicator) {
+                        indicator.innerHTML = `<i data-lucide="cloud-check" class="w-3.5 h-3.5 text-emerald-600"></i> Cloud Sinkron Aktif (Real-Time)`;
+                        indicator.className = "flex items-center gap-1.5 text-emerald-600 font-medium";
+                    }
+
+                    if (session.view === 'landing') {
+                        const activeId = document.activeElement?.id;
+                        if (activeId !== 'student-name' && activeId !== 'student-nis' && activeId !== 'student-room-code') {
+                            renderApp();
+                        }
+                    } else if (session.view === 'teacher-dashboard' && session.teacherTab === 'rooms') {
+                        const tag = document.activeElement?.tagName;
+                        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+                            renderApp();
+                        }
+                    }
+                    lucide.createIcons();
+                }, (error) => {
+                    console.error('Room snapshot error:', error);
+                    showToast('Koneksi ruang ujian cloud terganggu.', 'error');
+                });
+
+                // Real-time listener for Submissions
+                onSnapshot(getSubmissionsCol(), (snapshot) => {
+                    const subs = [];
+                    snapshot.forEach(docSnap => subs.push(docSnap.data()));
+                    subs.sort((a, b) => (b.id > a.id ? 1 : -1));
+                    appState.submissions = subs;
+
+                    if (session.view === 'teacher-dashboard') {
+                        if (session.teacherTab === 'live') {
+                            renderLiveMonitorTabContent();
+                        } else if (session.teacherTab === 'results') {
+                            const activeId = document.activeElement?.id;
+                            if (activeId !== 'manual-essay-score-input') {
+                                renderResultsTable();
+                            }
+                        }
+                    }
+                }, (error) => {
+                    console.error('Submission snapshot error:', error);
+                });
+
+            } catch (err) {
+                console.error('Cloud auth error:', err);
+                if (indicator) {
+                    indicator.innerHTML = `<i data-lucide="wifi-off" class="w-3.5 h-3.5 text-rose-600"></i> Cloud Terputus`;
+                    indicator.className = "flex items-center gap-1.5 text-rose-600 font-medium";
+                }
+                showToast('Gagal menghubungkan ke server cloud.', 'error');
+            }
+        }
+
+        // =========================================================================
+        // 2. UI TOAST & CONFIRM MODAL HELPERS
+        // =========================================================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            const bgColors = {
+                success: 'bg-emerald-600 text-white',
+                error: 'bg-rose-600 text-white',
+                warning: 'bg-amber-500 text-white',
+                info: 'bg-slate-800 text-white'
+            };
+            const icons = {
+                success: 'check-circle-2',
+                error: 'alert-circle',
+                warning: 'alert-triangle',
+                info: 'info'
+            };
+            toast.className = `${bgColors[type] || bgColors.info} px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-sm font-medium transform transition-all duration-300 translate-y-2 opacity-0 max-w-sm pointer-events-auto`;
+            toast.innerHTML = `<i data-lucide="${icons[type] || 'info'}" class="w-5 h-5 flex-shrink-0"></i><span class="flex-grow">${message}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        let confirmCallback = null;
+        function showConfirmModal(title, desc, onConfirm, isDanger = false) {
+            const modal = document.getElementById('confirm-modal');
+            const content = document.getElementById('confirm-modal-content');
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-desc').textContent = desc;
+            const okBtn = document.getElementById('confirm-ok-btn');
+            const iconWrap = document.getElementById('confirm-icon-wrap');
+
+            if (isDanger) {
+                okBtn.className = "px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-600/20 transition";
+                iconWrap.className = "w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0";
+            } else {
+                okBtn.className = "px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition";
+                iconWrap.className = "w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0";
+            }
+
+            confirmCallback = onConfirm;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        window.closeConfirmModal = function(isConfirmed) {
+            const modal = document.getElementById('confirm-modal');
+            const content = document.getElementById('confirm-modal-content');
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+                if (isConfirmed && confirmCallback) {
+                    confirmCallback();
+                }
+                confirmCallback = null;
+            }, 200);
+        };
+
+        // =========================================================================
+        // 3. NAVIGATION & VIEW CONTROLLER
+        // =========================================================================
+        function navigateTo(view) {
+            if (session.examTimerInterval) {
+                clearInterval(session.examTimerInterval);
+                session.examTimerInterval = null;
+            }
+            session.view = view;
+            renderApp();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function renderApp() {
+            const root = document.getElementById('app-root');
+            if (!root) return;
+
+            if (session.view === 'landing') {
+                renderLandingView(root);
+            } else if (session.view === 'teacher-login') {
+                renderTeacherLoginView(root);
+            } else if (session.view === 'teacher-dashboard') {
+                renderTeacherDashboard(root);
+            } else if (session.view === 'student-exam') {
+                renderStudentExam(root);
+            } else if (session.view === 'student-result') {
+                renderStudentResult(root);
+            }
+            lucide.createIcons();
+        }
+
+        // =========================================================================
+        // 4. LANDING VIEW (STUDENT ENTRY PORTAL)
+        // =========================================================================
+        function renderLandingView(container) {
+            container.innerHTML = `
+                <div class="max-w-4xl mx-auto space-y-8">
+                    <!-- HERO BANNER -->
+                    <div class="bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-900 rounded-3xl p-8 sm:p-12 text-white shadow-2xl relative overflow-hidden">
+                        <div class="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-emerald-600/20 blur-3xl pointer-events-none"></div>
+                        <div class="relative z-10 max-w-2xl">
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 mb-4">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Portal Resmi Ujian Daring PKBM Sunan Gunung Jati
+                            </span>
+                            <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-4">Selamat Datang, Peserta Didik</h2>
+                            <p class="text-emerald-100 text-sm sm:text-base leading-relaxed mb-6">
+                                Silakan masukkan Kode Ruangan yang diberikan oleh Guru Pembimbing Anda beserta Nama dan Nomor Induk Siswa (NIS) untuk memulai ujian. Sistem cloud akan menyimpan jawaban Anda secara otomatis.
+                            </p>
+                            <div class="flex flex-wrap gap-4 text-xs font-medium text-emerald-200">
+                                <div class="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                                    <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-400"></i> Anti-Bentrok Ruangan
+                                </div>
+                                <div class="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                                    <i data-lucide="cloud-cog" class="w-4 h-4 text-emerald-400"></i> Auto-Recovery Cloud
+                                </div>
+                                <div class="flex items-center gap-1.5 bg-emerald-900/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                                    <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400"></i> Responsif HP & Laptop
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- LOGIN CARD & ACTIVE ROOMS -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+                        <!-- STUDENT LOGIN FORM -->
+                        <div class="md:col-span-7 bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 border border-slate-100 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center gap-3 mb-6">
+                                    <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                                        <i data-lucide="log-in" class="w-5 h-5"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-bold text-slate-900">Masuk Ruang Ujian</h3>
+                                        <p class="text-xs text-slate-500">Isi data diri dan kode ruangan dengan benar</p>
+                                    </div>
+                                </div>
+
+                                <form onsubmit="handleStudentStartExam(event)" class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Kode Ruangan Ujian</label>
+                                        <div class="relative">
+                                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                                <i data-lucide="key-round" class="w-4 h-4"></i>
+                                            </span>
+                                            <input type="text" id="student-room-code" required placeholder="Contoh: PAKETC-BIND" oninput="syncRoomCodeInput(this)"
+                                                class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold uppercase tracking-wider text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white transition">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nama Lengkap Siswa</label>
+                                        <div class="relative">
+                                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                                <i data-lucide="user" class="w-4 h-4"></i>
+                                            </span>
+                                            <input type="text" id="student-name" required placeholder="Masukkan nama lengkap Anda"
+                                                class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white transition">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nomor Induk Siswa (NIS / No Peserta)</label>
+                                        <div class="relative">
+                                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                                <i data-lucide="id-card" class="w-4 h-4"></i>
+                                            </span>
+                                            <input type="text" id="student-nis" required placeholder="Contoh: 2026-C-014"
+                                                class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white transition">
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="w-full mt-2 py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2">
+                                        <span>Mulai Kerjakan Ujian</span>
+                                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- LIST OF ACTIVE ROOMS -->
+                        <div class="md:col-span-5 bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 border border-slate-100 flex flex-col">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
+                                    <i data-lucide="door-open" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-bold text-slate-900">Ruangan Tersedia</h3>
+                                    <p class="text-xs text-slate-500">Klik ruangan untuk menyalin kode</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3 overflow-y-auto max-h-[360px] custom-scrollbar pr-1">
+                                ${appState.rooms.length === 0 ? `
+                                    <div class="text-center py-12 text-slate-400 text-sm">Belum ada ruangan ujian yang dibuat oleh guru.</div>
+                                ` : appState.rooms.map(room => `
+                                    <div onclick="quickFillRoomCode('${room.code}')" class="p-4 rounded-2xl border ${room.status === 'OPEN' ? 'border-emerald-100 bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer' : 'border-slate-200 bg-slate-100 opacity-60'} transition">
+                                        <div class="flex items-center justify-between mb-1.5">
+                                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${room.status === 'OPEN' ? 'bg-emerald-600 text-white' : 'bg-slate-500 text-white'}">${room.status === 'OPEN' ? 'BUKA' : 'DITUTUP'}</span>
+                                            <span class="text-xs font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200">${room.code}</span>
+                                        </div>
+                                        <h4 class="font-bold text-slate-900 text-sm">${room.subject}</h4>
+                                        <p class="text-xs text-slate-500 mb-2">${room.paket} &bull; ${room.duration} Menit &bull; ${room.questions.length} Soal</p>
+                                        <div class="flex items-center justify-between text-xs text-emerald-700 font-semibold">
+                                            <span>Klik untuk isi kode</span>
+                                            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.syncRoomCodeInput = function(el) {
+            el.value = el.value.toUpperCase();
+        };
+
+        window.quickFillRoomCode = function(code) {
+            const input = document.getElementById('student-room-code');
+            if (input) {
+                input.value = code;
+                input.focus();
+                showToast(`Kode ruangan "${code}" dimasukkan ke form.`, 'info');
+            }
+        };
+
+        window.handleStudentStartExam = async function(e) {
+            e.preventDefault();
+            if (!isCloudReady) {
+                showToast('Sedang menghubungkan ke Cloud Server, mohon tunggu beberapa detik...', 'warning');
+                return;
+            }
+
+            const code = document.getElementById('student-room-code').value.trim().toUpperCase();
+            const name = document.getElementById('student-name').value.trim();
+            const nis = document.getElementById('student-nis').value.trim();
+
+            const room = appState.rooms.find(r => r.code === code);
+            if (!room) {
+                showToast(`Kode ruangan "${code}" tidak ditemukan! Periksa kembali penulisan kode.`, 'error');
+                return;
+            }
+
+            if (room.status !== 'OPEN') {
+                showToast(`Ruangan "${room.subject}" saat ini sedang DITUTUP oleh guru.`, 'error');
+                return;
+            }
+
+            if (!room.questions || room.questions.length === 0) {
+                showToast('Ruangan ujian ini belum memiliki soal. Hubungi guru penguji.', 'warning');
+                return;
+            }
+
+            // Cek sesi yang sudah ada di cloud untuk Auto-Recovery (jika siswa ganti HP/browser)
+            let existingSub = appState.submissions.find(
+                s => s.roomId === room.id && s.studentNis.toLowerCase() === nis.toLowerCase()
+            );
+
+            if (existingSub) {
+                if (existingSub.status === 'COMPLETED') {
+                    session.activeSubmissionId = existingSub.id;
+                    showToast('Anda sudah menyelesaikan ujian ini sebelumnya. Menampilkan hasil...', 'info');
+                    navigateTo('student-result');
+                    return;
+                } else {
+                    // Pulihkan sesi pengerjaan yang sempat tertutup
+                    session.activeSubmissionId = existingSub.id;
+                    session.activeQuestionIdx = existingSub.currentQuestionIndex || 0;
+                    showToast(`Selamat datang kembali, ${existingSub.studentName}! Jawaban & waktu dipulihkan dari cloud.`, 'success');
+                    navigateTo('student-exam');
+                    startExamTimer();
+                    return;
+                }
+            }
+
+            // Buat sesi ujian baru di cloud
+            const newSubId = `sub-${room.id}-${nis.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now()}`;
+            const newSub = {
+                id: newSubId,
+                roomId: room.id,
+                studentName: name,
+                studentNis: nis,
+                status: 'IN_PROGRESS',
+                answers: {},
+                currentQuestionIndex: 0,
+                remainingSeconds: (room.duration || 60) * 60,
+                pgScore: 0,
+                essayScore: 0,
+                totalScore: 0,
+                startedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+            };
+
+            appState.submissions.unshift(newSub);
+            session.activeSubmissionId = newSub.id;
+            session.activeQuestionIdx = 0;
+            await saveSubmissionToCloud(newSub);
+
+            showToast(`Berhasil masuk ke ruang ${room.subject}. Selamat mengerjakan!`, 'success');
+            navigateTo('student-exam');
+            startExamTimer();
+        };
+
+        function startExamTimer() {
+            if (session.examTimerInterval) clearInterval(session.examTimerInterval);
+            session.examTimerInterval = setInterval(() => {
+                const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+                if (!sub || sub.status === 'COMPLETED' || session.view !== 'student-exam') {
+                    clearInterval(session.examTimerInterval);
+                    session.examTimerInterval = null;
+                    return;
+                }
+
+                if (sub.remainingSeconds > 0) {
+                    sub.remainingSeconds -= 1;
+                    const timerEl = document.getElementById('exam-timer-display');
+                    if (timerEl) {
+                        timerEl.textContent = formatSeconds(sub.remainingSeconds);
+                        if (sub.remainingSeconds <= 60) {
+                            timerEl.classList.add('text-rose-400', 'animate-pulse');
+                        }
+                    }
+                    // Sinkronkan sisa waktu ke cloud setiap 10 detik
+                    if (sub.remainingSeconds % 10 === 0) {
+                        saveSubmissionToCloud(sub);
+                    }
+                } else {
+                    clearInterval(session.examTimerInterval);
+                    session.examTimerInterval = null;
+                    finalizeStudentExam(true);
+                }
+            }, 1000);
+        }
+
+        // =========================================================================
+        // 5. STUDENT EXAM TAKING VIEW
+        // =========================================================================
+        function renderStudentExam(container) {
+            const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) {
+                navigateTo('landing');
+                return;
+            }
+
+            const currentQ = room.questions[session.activeQuestionIdx];
+            const totalQ = room.questions.length;
+            const answeredCount = Object.keys(sub.answers).length;
+
+            container.innerHTML = `
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <!-- EXAM TOP HEADER BAR -->
+                    <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">${room.paket}</span>
+                            <h2 class="text-lg sm:text-xl font-bold text-slate-900 mt-1">${room.subject}</h2>
+                            <p class="text-xs text-slate-500">Peserta: <strong class="text-slate-700">${sub.studentName}</strong> (${sub.studentNis})</p>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="bg-slate-900 text-white px-4 py-2.5 rounded-2xl flex items-center gap-2.5 shadow-lg shadow-slate-900/20">
+                                <i data-lucide="timer" class="w-5 h-5 text-emerald-400"></i>
+                                <div>
+                                    <div class="text-[10px] uppercase font-semibold text-slate-400">Sisa Waktu</div>
+                                    <div id="exam-timer-display" class="text-base sm:text-lg font-mono font-bold tracking-wider">${formatSeconds(sub.remainingSeconds)}</div>
+                                </div>
+                            </div>
+                            <button onclick="confirmSubmitExam()" class="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                                <span>Kumpul Ujian</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- EXAM CONTENT & QUESTION NAVIGATOR -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+                        <!-- QUESTION CARD (8 cols) -->
+                        <div class="md:col-span-8 bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-between min-h-[420px]">
+                            <div>
+                                <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                                    <span class="text-sm font-bold text-slate-700">Soal Nomor ${session.activeQuestionIdx + 1} dari ${totalQ}</span>
+                                    <span class="px-3 py-1 rounded-full text-xs font-bold ${currentQ.type === 'PG' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}">${currentQ.type === 'PG' ? 'Pilihan Ganda' : 'Soal Esai Uraian'}</span>
+                                </div>
+
+                                <div class="text-base sm:text-lg font-medium text-slate-900 leading-relaxed mb-6">
+                                    ${currentQ.text}
+                                </div>
+
+                                ${currentQ.type === 'PG' ? `
+                                    <div class="space-y-3">
+                                        ${['A', 'B', 'C', 'D'].map(optKey => {
+                                            if (!currentQ.options[optKey]) return '';
+                                            const isSelected = sub.answers[currentQ.id] === optKey;
+                                            return `
+                                                <div onclick="selectPgAnswer('${currentQ.id}', '${optKey}')" class="flex items-start gap-3 p-4 rounded-2xl border-2 ${isSelected ? 'border-emerald-600 bg-emerald-50/50 text-emerald-950 font-semibold' : 'border-slate-200 hover:border-slate-300 bg-white text-slate-800'} cursor-pointer transition">
+                                                    <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'} flex-shrink-0 mt-0.5">${optKey}</div>
+                                                    <div class="text-sm leading-relaxed pt-0.5">${currentQ.options[optKey]}</div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                ` : `
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Jawaban Uraian Anda:</label>
+                                        <textarea rows="6" oninput="saveEssayAnswer('${currentQ.id}', this.value)" placeholder="Ketik jawaban lengkap dan jelas di sini..."
+                                            class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white transition custom-scrollbar">${sub.answers[currentQ.id] || ''}</textarea>
+                                    </div>
+                                `}
+                            </div>
+
+                            <!-- PREV / NEXT NAVIGATION -->
+                            <div class="flex items-center justify-between pt-6 border-t border-slate-100 mt-8">
+                                <button onclick="changeExamQuestion(${session.activeQuestionIdx - 1})" ${session.activeQuestionIdx === 0 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2">
+                                    <i data-lucide="chevron-left" class="w-4 h-4"></i> Sebelumnya
+                                </button>
+                                <button onclick="changeExamQuestion(${session.activeQuestionIdx + 1})" ${session.activeQuestionIdx === totalQ - 1 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2">
+                                    Selanjutnya <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- QUESTION PALETTE / STATUS (4 cols) -->
+                        <div class="md:col-span-4 bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-between">
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900 mb-3">Nomor Soal</h3>
+                                <div class="grid grid-cols-5 gap-2 mb-6">
+                                    ${room.questions.map((q, idx) => {
+                                        const isAnswered = sub.answers[q.id] !== undefined && sub.answers[q.id] !== '';
+                                        const isCurrent = session.activeQuestionIdx === idx;
+                                        let btnClass = 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200';
+                                        if (isAnswered) btnClass = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold';
+                                        if (isCurrent) btnClass = 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-md shadow-emerald-600/30 ring-2 ring-emerald-600/30';
+                                        return `
+                                            <button onclick="changeExamQuestion(${idx})" class="h-11 rounded-xl border text-sm font-semibold flex items-center justify-center transition ${btnClass}">
+                                                ${idx + 1}
+                                            </button>
+                                        `;
+                                    }).join('')}
+                                </div>
+
+                                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 space-y-2 text-xs text-slate-600">
+                                    <div class="flex items-center justify-between">
+                                        <span>Soal Dijawab:</span>
+                                        <strong class="text-slate-900">${answeredCount} dari ${totalQ}</strong>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span>Status Cloud:</span>
+                                        <strong class="text-emerald-600 flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> Tersimpan</strong>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button onclick="confirmSubmitExam()" class="w-full mt-6 py-3 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl border border-rose-200 transition flex items-center justify-center gap-2 text-sm">
+                                <i data-lucide="flag" class="w-4 h-4"></i> Akhiri & Kumpul Ujian
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatSeconds(sec) {
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        window.selectPgAnswer = function(questionId, optionKey) {
+            const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) return;
+
+            sub.answers[questionId] = optionKey;
+            const calc = calculateSubmissionScore(sub, room);
+            sub.pgScore = calc.pgScore;
+            sub.totalScore = calc.totalScore;
+            saveSubmissionToCloud(sub);
+            renderStudentExam(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        window.saveEssayAnswer = function(questionId, text) {
+            const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+            if (!sub) return;
+            sub.answers[questionId] = text;
+
+            if (session.essayDebounceTimer) clearTimeout(session.essayDebounceTimer);
+            session.essayDebounceTimer = setTimeout(() => {
+                saveSubmissionToCloud(sub);
+            }, 600);
+        };
+
+        window.changeExamQuestion = function(newIdx) {
+            const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) return;
+            if (newIdx < 0 || newIdx >= room.questions.length) return;
+
+            session.activeQuestionIdx = newIdx;
+            sub.currentQuestionIndex = newIdx;
+            saveSubmissionToCloud(sub);
+            renderStudentExam(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        window.confirmSubmitExam = function() {
+            showConfirmModal(
+                'Kumpulkan Jawaban Ujian?',
+                'Pastikan semua soal telah dijawab. Setelah dikumpulkan, Anda tidak dapat mengubah jawaban lagi.',
+                () => finalizeStudentExam(false),
+                true
+            );
+        };
+
+        function calculateSubmissionScore(sub, room) {
+            let pgCorrect = 0;
+            let pgTotalWeight = 0;
+            let pgObtainedWeight = 0;
+
+            room.questions.forEach(q => {
+                if (q.type === 'PG') {
+                    pgTotalWeight += (q.weight || 10);
+                    if (sub.answers[q.id] === q.answer) {
+                        pgObtainedWeight += (q.weight || 10);
+                    }
+                }
+            });
+
+            const pgScore = pgTotalWeight > 0 ? Math.round((pgObtainedWeight / pgTotalWeight) * 100) : 100;
+            const essayScore = sub.essayScore || 0;
+            const hasEssay = room.questions.some(q => q.type === 'ESSAY');
+            const totalScore = hasEssay ? Math.round((pgScore * 0.6) + (essayScore * 0.4)) : pgScore;
+
+            return { pgScore, totalScore };
+        }
+
+        function finalizeStudentExam(isTimeout = false) {
+            const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) return;
+
+            const now = new Date();
+            sub.status = 'COMPLETED';
+            sub.submittedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const calc = calculateSubmissionScore(sub, room);
+            sub.pgScore = calc.pgScore;
+            sub.totalScore = calc.totalScore;
+            saveSubmissionToCloud(sub);
+
+            if (isTimeout) {
+                showToast('Waktu habis! Jawaban otomatis dikumpulkan.', 'warning');
+            } else {
+                showToast('Jawaban ujian berhasil dikumpulkan ke cloud!', 'success');
+            }
+            navigateTo('student-result');
+        }
+
+        // =========================================================================
+        // 6. STUDENT RESULT VIEW
+        // =========================================================================
+        function renderStudentResult(container) {
+            const sub = appState.submissions.find(s => s.id === session.activeSubmissionId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) {
+                navigateTo('landing');
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="max-w-2xl mx-auto bg-white rounded-3xl p-8 sm:p-12 shadow-2xl shadow-slate-200/60 border border-slate-100 text-center space-y-6">
+                    <div class="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/20">
+                        <i data-lucide="award" class="w-10 h-10"></i>
+                    </div>
+                    <div>
+                        <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-3.5 py-1.5 rounded-full">Ujian Selesai</span>
+                        <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-3">Terima Kasih, ${sub.studentName}</h2>
+                        <p class="text-xs sm:text-sm text-slate-500 mt-1">Jawaban Anda untuk ruang ujian <strong>${room.subject}</strong> (${room.paket}) telah terekam di cloud.</p>
+                    </div>
+
+                    ${room.showScore ? `
+                        <div class="bg-slate-50 rounded-2xl p-6 border border-slate-200/80 max-w-sm mx-auto space-y-2">
+                            <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Nilai Akhir Anda</div>
+                            <div class="text-4xl sm:text-5xl font-black text-emerald-600">${sub.totalScore}</div>
+                            <p class="text-xs text-slate-500">PG: ${sub.pgScore} &bull; Esai: ${sub.essayScore || 0} (Menunggu koreksi guru)</p>
+                        </div>
+                    ` : `
+                        <div class="bg-amber-50 rounded-2xl p-4 border border-amber-200 text-amber-800 text-xs font-medium">
+                            Nilai akhir akan diumumkan setelah guru selesai melakukan koreksi dan verifikasi jawaban uraian.
+                        </div>
+                    `}
+
+                    <div class="pt-4">
+                        <button onclick="navigateTo('landing')" class="px-8 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm shadow-xl shadow-slate-900/20 transition">
+                            Keluar ke Beranda Utama
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // =========================================================================
+        // 7. TEACHER PORTAL & LOGIN VIEW
+        // =========================================================================
+        window.openTeacherPortal = function() {
+            if (session.isTeacherAuth) {
+                navigateTo('teacher-dashboard');
+            } else {
+                navigateTo('teacher-login');
+            }
+        };
+
+        function renderTeacherLoginView(container) {
+            container.innerHTML = `
+                <div class="max-w-md mx-auto bg-white rounded-3xl p-8 sm:p-10 shadow-2xl shadow-slate-200/60 border border-slate-100">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-lg shadow-emerald-600/30">
+                            <i data-lucide="shield-check" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-slate-900">Panel Guru Penguji</h3>
+                            <p class="text-xs text-slate-500">PKBM Sunan Gunung Jati</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="handleTeacherLogin(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">PIN Keamanan Guru</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                    <i data-lucide="lock" class="w-4 h-4"></i>
+                                </span>
+                                <input type="password" id="teacher-pin-input" required placeholder="Masukkan PIN (Default: 1234)"
+                                    class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold tracking-widest text-slate-800 focus:outline-none focus:border-emerald-600 focus:bg-white transition">
+                            </div>
+                            <p class="text-[11px] text-slate-400 mt-1.5">Hint default PIN: <code class="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-600 font-bold">1234</code></p>
+                        </div>
+
+                        <button type="submit" class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2">
+                            <span>Masuk Dashboard Guru</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        </button>
+
+                        <button type="button" onclick="navigateTo('landing')" class="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition">
+                            &larr; Kembali ke Beranda Siswa
+                        </button>
+                    </form>
+                </div>
+            `;
+        }
+
+        window.handleTeacherLogin = function(e) {
+            e.preventDefault();
+            const pin = document.getElementById('teacher-pin-input').value.trim();
+            if (pin === TEACHER_PIN) {
+                session.isTeacherAuth = true;
+                showToast('Login guru berhasil!', 'success');
+                navigateTo('teacher-dashboard');
+            } else {
+                showToast('PIN Guru Salah! Gunakan PIN: 1234', 'error');
+            }
+        };
+
+        window.logoutTeacher = function() {
+            session.isTeacherAuth = false;
+            showToast('Anda keluar dari Panel Guru.', 'info');
+            navigateTo('landing');
+        };
+
+        // =========================================================================
+        // 8. TEACHER DASHBOARD (ROOMS, WORD IMPORT, LIVE MONITORING, RESULTS)
+        // =========================================================================
+        function renderTeacherDashboard(container) {
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <!-- DASHBOARD HEADER BAR -->
+                    <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div class="flex items-center gap-4">
+                            <div class="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shadow-inner">
+                                <i data-lucide="layout-dashboard" class="w-7 h-7"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">Dashboard Utama Guru</span>
+                                <h2 class="text-xl sm:text-2xl font-black text-slate-900 mt-1">PKBM Sunan Gunung Jati</h2>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="logoutTeacher()" class="px-4 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center gap-2">
+                                <i data-lucide="log-out" class="w-4 h-4 text-rose-600"></i> Keluar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- DASHBOARD TABS NAVIGATION -->
+                    <div class="flex border-b border-slate-200 gap-6">
+                        <button onclick="switchTeacherTab('rooms')" class="pb-3 text-sm font-bold border-b-2 ${session.teacherTab === 'rooms' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-800'} transition flex items-center gap-2">
+                            <i data-lucide="folder-kanban" class="w-4 h-4"></i> Kelola Ruangan & Soal
+                        </button>
+                        <button onclick="switchTeacherTab('live')" class="pb-3 text-sm font-bold border-b-2 ${session.teacherTab === 'live' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-800'} transition flex items-center gap-2">
+                            <i data-lucide="activity" class="w-4 h-4"></i> Live Monitoring Siswa
+                        </button>
+                        <button onclick="switchTeacherTab('results')" class="pb-3 text-sm font-bold border-b-2 ${session.teacherTab === 'results' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-800'} transition flex items-center gap-2">
+                            <i data-lucide="clipboard-list" class="w-4 h-4"></i> Rekap Nilai & Koreksi Esai
+                        </button>
+                    </div>
+
+                    <!-- TAB CONTENT AREA -->
+                    <div id="teacher-tab-content">
+                        ${renderActiveTeacherTabContent()}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.switchTeacherTab = function(tab) {
+            session.teacherTab = tab;
+            const contentDiv = document.getElementById('teacher-tab-content');
+            if (contentDiv) {
+                contentDiv.innerHTML = renderActiveTeacherTabContent();
+                lucide.createIcons();
+            }
+            // Update active tab styles
+            document.querySelectorAll('button[onclick^="switchTeacherTab"]').forEach(btn => {
+                if (btn.getAttribute('onclick').includes(tab)) {
+                    btn.className = "pb-3 text-sm font-bold border-b-2 border-emerald-600 text-emerald-600 transition flex items-center gap-2";
+                } else {
+                    btn.className = "pb-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center gap-2";
+                }
+            });
+        };
+
+        function renderActiveTeacherTabContent() {
+            if (session.teacherTab === 'rooms') {
+                return renderRoomsTabContent();
+            } else if (session.teacherTab === 'live') {
+                return renderLiveMonitorTabHTML();
+            } else if (session.teacherTab === 'results') {
+                return renderResultsTabHTML();
+            }
+            return '';
+        }
+
+        // =========================================================================
+        // 9. ROOMS & QUESTION BANK MANAGEMENT (WITH WORD .DOCX IMPORT)
+        // =========================================================================
+        function renderRoomsTabContent() {
+            const selectedRoom = appState.rooms.find(r => r.id === session.selectedRoomId) || appState.rooms[0];
+            if (session.selectedRoomId && !selectedRoom && appState.rooms.length > 0) {
+                session.selectedRoomId = appState.rooms[0].id;
+            }
+
+            return `
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- LEFT COLUMN: ROOM LIST & CREATE -->
+                    <div class="lg:col-span-5 space-y-6">
+                        <!-- CREATE ROOM CARD -->
+                        <div class="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100">
+                            <h3 class="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-600"></i> Buat Ruangan Ujian Baru
+                            </h3>
+                            <form onsubmit="handleCreateRoom(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Paket Pendidikan</label>
+                                    <select id="new-room-paket" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-emerald-600">
+                                        <option value="Paket A (Setara SD)">Paket A (Setara SD)</option>
+                                        <option value="Paket B (Setara SMP)" selected>Paket B (Setara SMP)</option>
+                                        <option value="Paket C (Setara SMA)">Paket C (Setara SMA)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Mata Pelajaran</label>
+                                    <input type="text" id="new-room-subject" required placeholder="Contoh: Ilmu Pengetahuan Alam (IPA)"
+                                        class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:border-emerald-600">
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Kode Ruangan</label>
+                                        <input type="text" id="new-room-code" required placeholder="PAKETB-IPA"
+                                            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold uppercase text-slate-800 focus:outline-none focus:border-emerald-600">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Durasi (Menit)</label>
+                                        <input type="number" id="new-room-duration" required value="60" min="5" max="300"
+                                            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-emerald-600">
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 transition text-sm">
+                                    Simpan & Buat Ruangan
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- ROOMS LIST CARD -->
+                        <div class="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100">
+                            <h3 class="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Daftar Ruangan Aktif
+                            </h3>
+                            <div class="space-y-3 overflow-y-auto max-h-[380px] custom-scrollbar pr-1">
+                                ${appState.rooms.length === 0 ? '<p class="text-xs text-slate-400 text-center py-6">Belum ada ruangan.</p>' : appState.rooms.map(room => `
+                                    <div onclick="selectTeacherRoom('${room.id}')" class="p-4 rounded-2xl border-2 ${selectedRoom?.id === room.id ? 'border-emerald-600 bg-emerald-50/40' : 'border-slate-200 bg-white hover:border-slate-300'} cursor-pointer transition">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${room.status === 'OPEN' ? 'bg-emerald-600 text-white' : 'bg-slate-500 text-white'}">${room.status === 'OPEN' ? 'BUKA' : 'DITUTUP'}</span>
+                                            <span class="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">${room.code}</span>
+                                        </div>
+                                        <h4 class="font-bold text-slate-900 text-sm">${room.subject}</h4>
+                                        <p class="text-xs text-slate-500 mb-3">${room.paket} &bull; ${room.questions.length} Soal</p>
+                                        <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
+                                            <button onclick="event.stopPropagation(); toggleRoomStatus('${room.id}')" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+                                                ${room.status === 'OPEN' ? 'Tutup Ruangan' : 'Buka Ruangan'}
+                                            </button>
+                                            <button onclick="event.stopPropagation(); deleteRoom('${room.id}')" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition ml-auto">
+                                                Hapus
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT COLUMN: SELECTED ROOM QUESTION BANK & WORD IMPORT (.DOCX) -->
+                    <div class="lg:col-span-7 space-y-6">
+                        ${!selectedRoom ? `
+                            <div class="bg-white rounded-3xl p-12 text-center text-slate-400 shadow-xl border border-slate-100">Pilih atau buat ruangan terlebih dahulu.</div>
+                        ` : `
+                            <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 space-y-6">
+                                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                                    <div>
+                                        <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">${selectedRoom.code}</span>
+                                        <h3 class="text-lg font-bold text-slate-900 mt-1">${selectedRoom.subject}</h3>
+                                        <p class="text-xs text-slate-500">${selectedRoom.paket} &bull; Durasi: ${selectedRoom.duration} Menit</p>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button onclick="loadInstantSampleQuestions('${selectedRoom.id}')" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5">
+                                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-600"></i> Contoh Soal
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- WORD UPLOAD & IMPORT BOX (.DOCX) -->
+                                <div class="bg-gradient-to-br from-blue-50 to-indigo-50/50 rounded-2xl p-6 border border-blue-100 space-y-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                                            <i data-lucide="file-text" class="w-5 h-5"></i>
+                                        </div>
+                                        <div>
+                                            <h4 class="font-bold text-slate-900 text-sm">Impor Soal dari Microsoft Word (.docx)</h4>
+                                            <p class="text-xs text-slate-500">Otomatis ekstrak soal pilihan ganda & esai menggunakan Mammoth.js</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <label class="cursor-pointer px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition flex items-center gap-2">
+                                            <i data-lucide="upload" class="w-4 h-4"></i>
+                                            <span>Pilih File Word (.docx)</span>
+                                            <input type="file" accept=".docx" class="hidden" onchange="handleWordUpload(event, '${selectedRoom.id}')">
+                                        </label>
+                                        <button onclick="downloadSampleWordTemplate()" class="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 transition flex items-center gap-2">
+                                            <i data-lucide="download" class="w-4 h-4 text-blue-600"></i> Unduh Format Soal Word
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- MANUAL QUESTION ADD FORM TOGGLE -->
+                                <div class="space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="font-bold text-slate-900 text-sm">Daftar Soal (${selectedRoom.questions.length})</h4>
+                                        <button onclick="toggleManualQuestionForm()" class="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                                            <i data-lucide="plus" class="w-4 h-4"></i> Tambah Soal Manual
+                                        </button>
+                                    </div>
+
+                                    <!-- HIDDEN MANUAL QUESTION FORM -->
+                                    <div id="manual-question-form-card" class="hidden bg-slate-50 rounded-2xl p-6 border border-slate-200 space-y-4">
+                                        <h5 class="font-bold text-slate-900 text-xs uppercase tracking-wider">Form Soal Baru</h5>
+                                        <form onsubmit="handleAddManualQuestion(event, '${selectedRoom.id}')" class="space-y-4">
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Tipe Soal</label>
+                                                    <select id="mq-type" onchange="toggleMqOptions(this.value)" class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800">
+                                                        <option value="PG">Pilihan Ganda (PG)</option>
+                                                        <option value="ESSAY">Esai / Uraian</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Bobot Nilai</label>
+                                                    <input type="number" id="mq-weight" value="20" min="1" max="100" class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800">
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Pertanyaan / Soal</label>
+                                                <textarea id="mq-text" required rows="3" placeholder="Ketik isi pertanyaan..." class="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"></textarea>
+                                            </div>
+                                            <div id="mq-options-container" class="space-y-2">
+                                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Pilihan Jawaban (A, B, C, D) & Kunci Benar</label>
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    <input type="text" id="mq-opt-a" placeholder="Pilihan A" class="p-2.5 bg-white border border-slate-200 rounded-xl text-xs">
+                                                    <input type="text" id="mq-opt-b" placeholder="Pilihan B" class="p-2.5 bg-white border border-slate-200 rounded-xl text-xs">
+                                                    <input type="text" id="mq-opt-c" placeholder="Pilihan C" class="p-2.5 bg-white border border-slate-200 rounded-xl text-xs">
+                                                    <input type="text" id="mq-opt-d" placeholder="Pilihan D" class="p-2.5 bg-white border border-slate-200 rounded-xl text-xs">
+                                                </div>
+                                                <div class="mt-2">
+                                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Kunci Jawaban PG (A/B/C/D)</label>
+                                                    <select id="mq-answer" class="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-emerald-700">
+                                                        <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="flex justify-end gap-2 pt-2">
+                                                <button type="button" onclick="toggleManualQuestionForm()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200">Batal</button>
+                                                <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">Simpan Soal</button>
+                                            </div>
+                                        </form>
+                                    </div>
+
+                                    <!-- QUESTIONS LIST -->
+                                    <div class="space-y-3 overflow-y-auto max-h-[360px] custom-scrollbar pr-1">
+                                        ${selectedRoom.questions.length === 0 ? '<p class="text-xs text-slate-400 text-center py-6">Belum ada soal dalam ruangan ini.</p>' : selectedRoom.questions.map((q, idx) => `
+                                            <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2">
+                                                <div class="flex items-center justify-between">
+                                                    <span class="text-xs font-bold text-slate-700">Soal #${idx + 1} (${q.type})</span>
+                                                    <button onclick="deleteQuestion('${selectedRoom.id}', '${q.id}')" class="text-rose-600 hover:text-rose-700 text-xs font-semibold flex items-center gap-1">
+                                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Hapus
+                                                    </button>
+                                                </div>
+                                                <p class="text-xs sm:text-sm font-medium text-slate-900">${q.text}</p>
+                                                ${q.type === 'PG' ? `
+                                                    <div class="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1">
+                                                        <div>A. ${q.options.A || '-'}</div>
+                                                        <div>B. ${q.options.B || '-'}</div>
+                                                        <div>C. ${q.options.C || '-'}</div>
+                                                        <div>D. ${q.options.D || '-'}</div>
+                                                    </div>
+                                                    <div class="text-[11px] font-bold text-emerald-700 pt-1">Kunci: ${q.answer}</div>
+                                                ` : '<div class="text-[11px] font-bold text-purple-700 pt-1">Soal Uraian / Esai Panjang</div>'}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.selectTeacherRoom = function(roomId) {
+            session.selectedRoomId = roomId;
+            renderTeacherDashboard(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        window.handleCreateRoom = function(e) {
+            e.preventDefault();
+            const paket = document.getElementById('new-room-paket').value;
+            const subject = document.getElementById('new-room-subject').value.trim();
+            const code = document.getElementById('new-room-code').value.trim().toUpperCase().replace(/\s+/g, '-');
+            const duration = parseInt(document.getElementById('new-room-duration').value) || 60;
+
+            if (appState.rooms.some(r => r.code === code)) {
+                showToast(`Kode ruangan "${code}" sudah digunakan! Gunakan kode unik lain.`, 'error');
+                return;
+            }
+
+            const newRoom = {
+                id: 'room-' + Date.now(),
+                code,
+                paket,
+                subject,
+                duration,
+                status: 'OPEN',
+                showScore: true,
+                createdAt: new Date().toLocaleDateString('id-ID'),
+                questions: []
+            };
+
+            appState.rooms.push(newRoom);
+            session.selectedRoomId = newRoom.id;
+            saveRoomToCloud(newRoom);
+            showToast(`Ruangan "${subject}" (${code}) berhasil dibuat di cloud!`, 'success');
+            renderTeacherDashboard(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        window.toggleRoomStatus = function(roomId) {
+            const room = appState.rooms.find(r => r.id === roomId);
+            if (!room) return;
+            room.status = room.status === 'OPEN' ? 'CLOSED' : 'OPEN';
+            saveRoomToCloud(room);
+            showToast(`Ruangan ${room.subject} sekarang ${room.status === 'OPEN' ? 'DIBUKA' : 'DITUTUP'}.`, 'info');
+            renderTeacherDashboard(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        window.deleteRoom = function(roomId) {
+            const room = appState.rooms.find(r => r.id === roomId);
+            if (!room) return;
+            showConfirmModal(
+                'Hapus Ruangan Ujian?',
+                `Yakin ingin menghapus ruangan "${room.subject}" (${room.code}) beserta seluruh soal dan data nilainya?`,
+                async () => {
+                    appState.rooms = appState.rooms.filter(r => r.id !== roomId);
+                    const relatedSubs = appState.submissions.filter(s => s.roomId === roomId);
+                    appState.submissions = appState.submissions.filter(s => s.roomId !== roomId);
+
+                    await deleteRoomFromCloud(roomId);
+                    for (const sub of relatedSubs) {
+                        await deleteDoc(getSubmissionDoc(sub.id));
+                    }
+
+                    showToast('Ruangan berhasil dihapus dari cloud.', 'info');
+                    renderTeacherDashboard(document.getElementById('app-root'));
+                    lucide.createIcons();
+                },
+                true
+            );
+        };
+
+        window.toggleManualQuestionForm = function() {
+            const card = document.getElementById('manual-question-form-card');
+            if (card) card.classList.toggle('hidden');
+        };
+
+        window.toggleMqOptions = function(type) {
+            const container = document.getElementById('mq-options-container');
+            if (container) {
+                container.style.display = type === 'PG' ? 'block' : 'none';
+            }
+        };
+
+        window.handleAddManualQuestion = function(e, roomId) {
+            e.preventDefault();
+            const room = appState.rooms.find(r => r.id === roomId);
+            if (!room) return;
+
+            const type = document.getElementById('mq-type').value;
+            const weight = parseInt(document.getElementById('mq-weight').value) || 20;
+            const text = document.getElementById('mq-text').value.trim();
+
+            const newQ = {
+                id: 'q-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+                type,
+                text,
+                options: type === 'PG' ? {
+                    A: document.getElementById('mq-opt-a').value.trim(),
+                    B: document.getElementById('mq-opt-b').value.trim(),
+                    C: document.getElementById('mq-opt-c').value.trim(),
+                    D: document.getElementById('mq-opt-d').value.trim()
+                } : {},
+                answer: type === 'PG' ? document.getElementById('mq-answer').value : '',
+                weight
+            };
+
+            room.questions.push(newQ);
+            saveRoomToCloud(room);
+            showToast('Soal berhasil ditambahkan ke cloud!', 'success');
+            renderTeacherDashboard(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        window.deleteQuestion = function(roomId, questionId) {
+            const room = appState.rooms.find(r => r.id === roomId);
+            if (!room) return;
+            room.questions = room.questions.filter(q => q.id !== questionId);
+            saveRoomToCloud(room);
+            showToast('Soal dihapus.', 'info');
+            renderTeacherDashboard(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        // WORD UPLOAD HANDLER WITH MAMMOTH.JS
+        window.handleWordUpload = function(e, roomId) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const arrayBuffer = event.target.result;
+                try {
+                    const result = await mammoth.extractRawText({ arrayBuffer });
+                    const text = result.value;
+                    const parsedQuestions = parseWordTextToQuestions(text);
+
+                    if (parsedQuestions.length === 0) {
+                        showToast('Tidak ada soal yang terdeteksi. Periksa kembali format file Word Anda.', 'warning');
+                        return;
+                    }
+
+                    const room = appState.rooms.find(r => r.id === roomId);
+                    if (room) {
+                        room.questions.push(...parsedQuestions);
+                        saveRoomToCloud(room);
+                        showToast(`Berhasil mengimpor ${parsedQuestions.length} soal dari file Word "${file.name}"!`, 'success');
+                        renderTeacherDashboard(document.getElementById('app-root'));
+                        lucide.createIcons();
+                    }
+                } catch (err) {
+                    console.error('Word parse error:', err);
+                    showToast('Gagal membaca file Word (.docx).', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        function parseWordTextToQuestions(text) {
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const questions = [];
+            let currentQ = null;
+
+            lines.forEach(line => {
+                if (/^(Soal\s*\d+|\d+\.)/i.test(line)) {
+                    if (currentQ) questions.push(currentQ);
+                    currentQ = {
+                        id: 'q-word-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+                        type: 'PG',
+                        text: line.replace(/^(Soal\s*\d+|\d+\.)\s*/i, ''),
+                        options: { A: '', B: '', C: '', D: '' },
+                        answer: 'A',
+                        weight: 20
+                    };
+                } else if (/^[A-D][\.\)]\s*/i.test(line)) {
+                    if (currentQ) {
+                        const optKey = line.charAt(0).toUpperCase();
+                        const optVal = line.replace(/^[A-D][\.\)]\s*/i, '');
+                        if (currentQ.options) currentQ.options[optKey] = optVal;
+                    }
+                } else if (/^Kunci[:\s]*/i.test(line)) {
+                    if (currentQ) {
+                        const ans = line.replace(/^Kunci[:\s]*/i, '').trim().toUpperCase();
+                        if (['A', 'B', 'C', 'D'].includes(ans)) currentQ.answer = ans;
+                    }
+                } else {
+                    if (currentQ) {
+                        currentQ.text += ' ' + line;
+                    }
+                }
+            });
+            if (currentQ) questions.push(currentQ);
+            return questions;
+        }
+
+        window.downloadSampleWordTemplate = function() {
+            const content = `PETUNJUK FORMAT SOAL WORD (.DOCX) UNTUK PKBM SUNAN GUNUNG JATI:
+
+1. 1. Apa kepanjangan dari PKBM?
+A. Pusat Kegiatan Belajar Masyarakat
+B. Pusat Kurikulum Belajar Mandiri
+C. Pendidikan Kelompok Belajar Muda
+D. Pusat Kemitraan Belajar Mandiri
+Kunci: A
+
+2. 2. Sebutkan dan jelaskan peran pendidikan kesetaraan bagi masyarakat!
+(Untuk soal uraian/esai cukup tuliskan teks pertanyaan esai di sini tanpa pilihan A-D).`;
+
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Format_Soal_Ujian_PKBM_SunanGunungJati.txt';
+            a.click();
+            showToast('Template panduan format soal berhasil diunduh.', 'success');
+        };
+
+        window.loadInstantSampleQuestions = function(roomId) {
+            const room = appState.rooms.find(r => r.id === roomId);
+            if (!room) return;
+
+            room.questions.push(
+                {
+                    id: 'q-inst-1',
+                    type: 'PG',
+                    text: 'Pancasila sebagai dasar negara Republik Indonesia secara resmi disahkan pada tanggal...',
+                    options: { A: '1 Juni 1945', B: '17 Agustus 1945', C: '18 Agustus 1945', D: '22 Juni 1945' },
+                    answer: 'C',
+                    weight: 50
+                },
+                {
+                    id: 'q-inst-2',
+                    type: 'ESSAY',
+                    text: 'Jelaskan makna Bhinneka Tunggal Ika dalam menjaga persatuan bangsa Indonesia!',
+                    options: {},
+                    answer: '',
+                    weight: 50
+                }
+            );
+
+            saveRoomToCloud(room);
+            showToast('2 Soal contoh instan berhasil ditambahkan!', 'success');
+            renderTeacherDashboard(document.getElementById('app-root'));
+            lucide.createIcons();
+        };
+
+        // =========================================================================
+        // 10. LIVE MONITORING & RESULTS TABS FOR TEACHER
+        // =========================================================================
+        function renderLiveMonitorTabHTML() {
+            return `
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Pemantauan Siswa Real-Time</h3>
+                            <p class="text-xs text-slate-500">Melihat progres nomor soal dan status pengerjaan siswa secara langsung dari cloud</p>
+                        </div>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Live Sync Aktif
+                        </span>
+                    </div>
+                    <div id="live-monitor-container">
+                        ${renderLiveMonitorTableHTML()}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderLiveMonitorTabContent = function() {
+            const container = document.getElementById('live-monitor-container');
+            if (container) {
+                container.innerHTML = renderLiveMonitorTableHTML();
+                lucide.createIcons();
+            }
+        };
+
+        function renderLiveMonitorTableHTML() {
+            if (appState.submissions.length === 0) {
+                return '<div class="text-center py-12 text-slate-400 text-sm">Belum ada siswa yang masuk atau mulai mengerjakan ujian.</div>';
+            }
+
+            return `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-50">
+                                <th class="p-4 rounded-l-xl">Nama Siswa / NIS</th>
+                                <th class="p-4">Ruangan / Mata Pelajaran</th>
+                                <th class="p-4">Status</th>
+                                <th class="p-4">Soal Aktif</th>
+                                <th class="p-4">Sisa Waktu</th>
+                                <th class="p-4 rounded-r-xl text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                            ${appState.submissions.map(sub => {
+                                const room = appState.rooms.find(r => r.id === sub.roomId);
+                                const isCompleted = sub.status === 'COMPLETED';
+                                return `
+                                    <tr class="hover:bg-slate-50/50 transition">
+                                        <td class="p-4">
+                                            <div class="font-bold text-slate-900">${sub.studentName}</div>
+                                            <div class="text-xs text-slate-500 font-mono">${sub.studentNis}</div>
+                                        </td>
+                                        <td class="p-4">
+                                            <div class="font-semibold text-slate-800">${room ? room.subject : 'N/A'}</div>
+                                            <div class="text-xs text-slate-500">${room ? room.paket : ''}</div>
+                                        </td>
+                                        <td class="p-4">
+                                            <span class="px-3 py-1 rounded-full text-xs font-bold ${isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}">
+                                                ${isCompleted ? 'Selesai Kumpul' : 'Sedang Mengerjakan'}
+                                            </span>
+                                        </td>
+                                        <td class="p-4 font-mono font-semibold text-slate-700">
+                                            Soal #${(sub.currentQuestionIndex || 0) + 1}
+                                        </td>
+                                        <td class="p-4 font-mono text-slate-600">
+                                            ${formatSeconds(sub.remainingSeconds)}
+                                        </td>
+                                        <td class="p-4 text-right">
+                                            <button onclick="inspectStudentAnswers('${sub.id}')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition">
+                                                Periksa Jawaban
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderResultsTabHTML() {
+            return `
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 space-y-6">
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Rekap Nilai & Koreksi Esai Siswa</h3>
+                            <p class="text-xs text-slate-500">Nilai pilihan ganda otomatis dikalkulasi, nilai esai dapat diverifikasi manual</p>
+                        </div>
+                        <button onclick="exportResultsToCSV()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Ekspor Rekap ke CSV (Excel)
+                        </button>
+                    </div>
+                    <div id="results-table-container">
+                        ${renderResultsTableHTML()}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderResultsTable = function() {
+            const container = document.getElementById('results-table-container');
+            if (container) {
+                container.innerHTML = renderResultsTableHTML();
+                lucide.createIcons();
+            }
+        };
+
+        function renderResultsTableHTML() {
+            const completedSubs = appState.submissions.filter(s => s.status === 'COMPLETED');
+            if (completedSubs.length === 0) {
+                return '<div class="text-center py-12 text-slate-400 text-sm">Belum ada siswa yang menyelesaikan dan mengumpulkan ujian.</div>';
+            }
+
+            return `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-50">
+                                <th class="p-4 rounded-l-xl">Nama Siswa / NIS</th>
+                                <th class="p-4">Ruangan</th>
+                                <th class="p-4 text-center">Nilai PG</th>
+                                <th class="p-4 text-center">Nilai Esai</th>
+                                <th class="p-4 text-center">Nilai Total</th>
+                                <th class="p-4">Waktu Kumpul</th>
+                                <th class="p-4 rounded-r-xl text-right">Koreksi / Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                            ${completedSubs.map(sub => {
+                                const room = appState.rooms.find(r => r.id === sub.roomId);
+                                return `
+                                    <tr class="hover:bg-slate-50/50 transition">
+                                        <td class="p-4">
+                                            <div class="font-bold text-slate-900">${sub.studentName}</div>
+                                            <div class="text-xs text-slate-500 font-mono">${sub.studentNis}</div>
+                                        </td>
+                                        <td class="p-4 font-semibold text-slate-800">${room ? room.subject : 'N/A'}</td>
+                                        <td class="p-4 text-center font-mono font-bold text-slate-700">${sub.pgScore}</td>
+                                        <td class="p-4 text-center font-mono font-bold text-purple-700">${sub.essayScore || 0}</td>
+                                        <td class="p-4 text-center font-mono font-extrabold text-emerald-600 text-base">${sub.totalScore}</td>
+                                        <td class="p-4 text-xs text-slate-500 font-mono">${sub.submittedAt || '-'}</td>
+                                        <td class="p-4 text-right">
+                                            <button onclick="inspectStudentAnswers('${sub.id}')" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl transition">
+                                                Koreksi Esai
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // INSPECT / MANUAL ESSAY GRADING MODAL
+        window.inspectStudentAnswers = function(subId) {
+            const sub = appState.submissions.find(s => s.id === subId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) return;
+
+            const modalId = 'inspect-modal';
+            let modal = document.getElementById(modalId);
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = modalId;
+                modal.className = "fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4";
+                document.body.appendChild(modal);
+            }
+
+            modal.innerHTML = `
+                <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Lembar Jawaban: ${sub.studentName}</h3>
+                            <p class="text-xs text-slate-500">NIS: ${sub.studentNis} &bull; Ruangan: ${room.subject}</p>
+                        </div>
+                        <button onclick="document.getElementById('${modalId}').remove()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 font-bold">&times;</button>
+                    </div>
+
+                    <div class="p-6 overflow-y-auto space-y-6 custom-scrollbar flex-grow">
+                        <!-- ESSAY GRADING BOX -->
+                        <div class="bg-purple-50 rounded-2xl p-4 border border-purple-100 space-y-3">
+                            <h4 class="font-bold text-purple-900 text-xs uppercase tracking-wider">Koreksi Nilai Esai (0 - 100)</h4>
+                            <div class="flex items-center gap-3">
+                                <input type="number" id="manual-essay-score-input" value="${sub.essayScore || 0}" min="0" max="100" class="w-28 p-2.5 bg-white border border-purple-200 rounded-xl text-sm font-bold text-purple-900">
+                                <button onclick="saveManualEssayScore('${sub.id}')" class="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition">
+                                    Simpan Nilai Esai
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ANSWERS DETAIL LIST -->
+                        <div class="space-y-4">
+                            ${room.questions.map((q, idx) => {
+                                const studentAns = sub.answers[q.id] || '(Tidak dijawab)';
+                                const isCorrect = q.type === 'PG' && studentAns === q.answer;
+                                return `
+                                    <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-bold text-slate-700">Soal #${idx + 1} (${q.type})</span>
+                                            ${q.type === 'PG' ? `
+                                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
+                                                    ${isCorrect ? 'Benar' : 'Salah'}
+                                                </span>
+                                            ` : ''}
+                                        </div>
+                                        <p class="text-xs sm:text-sm font-medium text-slate-900">${q.text}</p>
+                                        <div class="text-xs bg-white p-3 rounded-xl border border-slate-200">
+                                            <strong class="text-slate-500 block mb-1">Jawaban Siswa:</strong>
+                                            <span class="${q.type === 'PG' && !isCorrect ? 'text-rose-600 font-bold' : 'text-slate-800'}">${studentAns}</span>
+                                        </div>
+                                        ${q.type === 'PG' ? `<div class="text-[11px] text-slate-500">Kunci Benar: <strong class="text-emerald-700 font-bold">${q.answer}</strong></div>` : ''}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        };
+
+        window.saveManualEssayScore = function(subId) {
+            const sub = appState.submissions.find(s => s.id === subId);
+            const room = appState.rooms.find(r => r.id === sub?.roomId);
+            if (!sub || !room) return;
+
+            const val = parseInt(document.getElementById('manual-essay-score-input').value) || 0;
+            sub.essayScore = Math.max(0, Math.min(100, val));
+            const calc = calculateSubmissionScore(sub, room);
+            sub.totalScore = calc.totalScore;
+            saveSubmissionToCloud(sub);
+
+            showToast(`Nilai esai disimpan! Total nilai akhir menjadi ${sub.totalScore}.`, 'success');
+            renderResultsTable();
+            inspectStudentAnswers(subId);
+        };
+
+        window.exportResultsToCSV = function() {
+            const completedSubs = appState.submissions.filter(s => s.status === 'COMPLETED');
+            if (completedSubs.length === 0) {
+                showToast('Belum ada data nilai untuk diekspor.', 'warning');
+                return;
+            }
+
+            let csv = 'NIS,Nama Siswa,Ruangan,Nilai PG,Nilai Esai,Nilai Total,Waktu Kumpul\n';
+            completedSubs.forEach(sub => {
+                const room = appState.rooms.find(r => r.id === sub.roomId);
+                csv += `"${sub.studentNis}","${sub.studentName}","${room ? room.subject : 'N/A'}",${sub.pgScore},${sub.essayScore || 0},${sub.totalScore},"${sub.submittedAt || '-'}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Rekap_Nilai_Ujian_PKBM_SunanGunungJati_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            showToast('Rekap nilai berhasil diekspor ke file CSV (Excel).', 'success');
+        };
+
+        // Expose all necessary functions globally for inline HTML event handlers
+        Object.assign(window, {
+            navigateTo,
+            syncRoomCodeInput,
+            quickFillRoomCode,
+            handleStudentStartExam,
+            selectPgAnswer,
+            saveEssayAnswer,
+            changeExamQuestion,
+            confirmSubmitExam,
+            openTeacherPortal,
+            logoutTeacher,
+            handleTeacherLogin,
+            switchTeacherTab,
+            selectTeacherRoom,
+            handleCreateRoom,
+            toggleRoomStatus,
+            deleteRoom,
+            toggleManualQuestionForm,
+            toggleMqOptions,
+            handleAddManualQuestion,
+            deleteQuestion,
+            handleWordUpload,
+            downloadSampleWordTemplate,
+            loadInstantSampleQuestions,
+            renderLiveMonitorTabContent,
+            renderResultsTable,
+            inspectStudentAnswers,
+            saveManualEssayScore,
+            exportResultsToCSV
+        });
+
+        // Initialize App on Window Load
+        window.onload = function() {
+            renderApp();
+            initCloudSync();
+        };
+    </script>
+</body>
+</html>
